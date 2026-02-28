@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StepCapture</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+  }
+
+  header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #f8fafc;
+  }
+
+  header h1 span { color: #38bdf8; }
+
+  .api-key-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .api-key-group label { font-size: 13px; color: #94a3b8; }
+
+  .api-key-group input {
+    width: 220px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #475569;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-size: 13px;
+  }
+
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 24px;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+    flex-wrap: wrap;
+  }
+
+  button {
+    padding: 7px 16px;
+    border-radius: 6px;
+    border: 1px solid #475569;
+    background: #334155;
+    color: #e2e8f0;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+
+  button:hover { background: #475569; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  button.primary {
+    background: #2563eb;
+    border-color: #3b82f6;
+    color: #fff;
+  }
+
+  button.primary:hover { background: #1d4ed8; }
+
+  button.danger {
+    background: #dc2626;
+    border-color: #ef4444;
+    color: #fff;
+  }
+
+  button.danger:hover { background: #b91c1c; }
+
+  button.success {
+    background: #059669;
+    border-color: #10b981;
+    color: #fff;
+  }
+
+  button.success:hover { background: #047857; }
+
+  .toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    font-size: 13px;
+    color: #94a3b8;
+  }
+
+  .toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    cursor: pointer;
+  }
+
+  .toggle input { display: none; }
+
+  .toggle .slider {
+    position: absolute;
+    inset: 0;
+    background: #475569;
+    border-radius: 11px;
+    transition: background 0.2s;
+  }
+
+  .toggle .slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 3px;
+    top: 3px;
+    background: #e2e8f0;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .toggle input:checked + .slider { background: #2563eb; }
+  .toggle input:checked + .slider::before { transform: translateX(18px); }
+
+  .sensitivity-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #94a3b8;
+  }
+
+  .sensitivity-group input[type="range"] {
+    width: 80px;
+    accent-color: #2563eb;
+  }
+
+  .preview-area {
+    padding: 16px 24px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .preview-area video {
+    max-width: 100%;
+    max-height: 360px;
+    border-radius: 8px;
+    border: 2px solid #334155;
+    background: #000;
+  }
+
+  .preview-placeholder {
+    width: 100%;
+    max-width: 640px;
+    height: 200px;
+    border-radius: 8px;
+    border: 2px dashed #334155;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #475569;
+    font-size: 14px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid #334155;
+  }
+
+  .section-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .section-header h2 span {
+    color: #94a3b8;
+    font-weight: 400;
+    font-size: 14px;
+    margin-left: 6px;
+  }
+
+  .steps-list {
+    padding: 0 24px 24px;
+  }
+
+  .step-card {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    margin-top: 10px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    transition: border-color 0.15s, opacity 0.2s;
+  }
+
+  .step-card.dragging { opacity: 0.4; }
+  .step-card.drag-over { border-color: #3b82f6; }
+
+  .step-thumb {
+    flex-shrink: 0;
+    width: 160px;
+    height: 100px;
+    border-radius: 6px;
+    object-fit: cover;
+    border: 1px solid #334155;
+    background: #0f172a;
+    cursor: pointer;
+  }
+
+  .step-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .step-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .step-number {
+    font-size: 12px;
+    font-weight: 700;
+    color: #38bdf8;
+    flex-shrink: 0;
+  }
+
+  .step-title {
+    flex: 1;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #f8fafc;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .step-title:focus {
+    border-color: #475569;
+    background: #0f172a;
+    outline: none;
+  }
+
+  .step-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .step-actions button { padding: 4px 10px; font-size: 12px; }
+
+  .step-description {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 4px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 48px;
+  }
+
+  .step-description:focus {
+    border-color: #3b82f6;
+    outline: none;
+  }
+
+  .step-description::placeholder { color: #475569; }
+
+  .export-bar {
+    display: flex;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid #334155;
+    background: #1e293b;
+  }
+
+  .status {
+    padding: 8px 24px;
+    font-size: 13px;
+    color: #94a3b8;
+    min-height: 32px;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid #475569;
+    border-top-color: #38bdf8;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .drag-handle {
+    cursor: grab;
+    color: #475569;
+    font-size: 18px;
+    user-select: none;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .drag-handle:active { cursor: grabbing; }
+
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.active { display: flex; }
+
+  .modal-overlay img {
+    max-width: 90vw;
+    max-height: 90vh;
+    border-radius: 8px;
+    border: 2px solid #334155;
+  }
+
+  .recording-badge {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #ef4444;
+    font-weight: 600;
+  }
+
+  .recording-badge.active { display: flex; }
+
+  .recording-dot {
+    width: 8px;
+    height: 8px;
+    background: #ef4444;
+    border-radius: 50%;
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Step<span>Capture</span></h1>
+  <div class="api-key-group">
+    <label for="apiKey">API Key (optional):</label>
+    <input type="password" id="apiKey" placeholder="sk-ant-... for AI descriptions" autocomplete="off">
+  </div>
+</header>
+
+<div class="controls">
+  <button id="btnStart" class="primary">Start Recording</button>
+  <button id="btnStop" disabled>Stop</button>
+  <button id="btnMark" class="success" disabled>Mark Step</button>
+  <div class="recording-badge" id="recBadge">
+    <div class="recording-dot"></div>
+    REC
+  </div>
+  <div class="toggle-group">
+    <span>Auto-detect:</span>
+    <label class="toggle">
+      <input type="checkbox" id="autoDetect">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="sensitivity-group">
+    <span>Sensitivity:</span>
+    <input type="range" id="sensitivity" min="1" max="20" value="5">
+    <span id="sensVal">5</span>
+  </div>
+</div>
+
+<div class="preview-area" id="previewArea">
+  <div class="preview-placeholder" id="placeholder">Click "Start Recording" to begin capturing your screen</div>
+  <video id="preview" autoplay muted style="display:none"></video>
+</div>
+
+<canvas id="captureCanvas" style="display:none"></canvas>
+
+<div class="status" id="status"></div>
+
+<div class="section-header">
+  <h2>Steps <span id="stepCount">(0 captured)</span></h2>
+  <button id="btnGenAll" class="primary" disabled>Generate All Descriptions</button>
+</div>
+
+<div class="steps-list" id="stepsList"></div>
+
+<div class="export-bar">
+  <button id="btnExportHTML" class="primary" disabled>Export as HTML</button>
+  <button id="btnCopyMD" disabled>Copy as Markdown</button>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <img id="modalImg" src="" alt="Full screenshot">
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const apiKeyInput = $('#apiKey');
+const preview = $('#preview');
+const placeholder = $('#placeholder');
+const canvas = $('#captureCanvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const btnStart = $('#btnStart');
+const btnStop = $('#btnStop');
+const btnMark = $('#btnMark');
+const btnGenAll = $('#btnGenAll');
+const btnExportHTML = $('#btnExportHTML');
+const btnCopyMD = $('#btnCopyMD');
+const autoDetect = $('#autoDetect');
+const sensitivityInput = $('#sensitivity');
+const sensVal = $('#sensVal');
+const statusEl = $('#status');
+const stepsList = $('#stepsList');
+const stepCountEl = $('#stepCount');
+const recBadge = $('#recBadge');
+const modal = $('#modal');
+const modalImg = $('#modalImg');
+
+let stream = null;
+let steps = [];
+let autoDetectInterval = null;
+let prevFrameData = null;
+let dragSrcIdx = null;
+
+// Persist API key
+apiKeyInput.value = localStorage.getItem('stepcapture_apikey') || '';
+apiKeyInput.addEventListener('input', () => {
+  localStorage.setItem('stepcapture_apikey', apiKeyInput.value);
+});
+
+sensitivityInput.addEventListener('input', () => {
+  sensVal.textContent = sensitivityInput.value;
+});
+
+// Modal
+modal.addEventListener('click', () => modal.classList.remove('active'));
+
+// Start recording
+btnStart.addEventListener('click', async () => {
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { cursor: 'always' },
+      audio: false
+    });
+    preview.srcObject = stream;
+    preview.style.display = '';
+    placeholder.style.display = 'none';
+    btnStart.disabled = true;
+    btnStop.disabled = false;
+    btnMark.disabled = false;
+    recBadge.classList.add('active');
+    setStatus('Recording started. Perform actions and click "Mark Step" to capture.');
+
+    const track = stream.getVideoTracks()[0];
+    console.log('Track state:', track.readyState, 'Settings:', track.getSettings());
+    track.addEventListener('ended', () => {
+      console.log('Track ended');
+      stopRecording();
+    });
+
+    // Wait for video to actually start playing
+    preview.onloadedmetadata = () => {
+      console.log('Video metadata loaded:', preview.videoWidth, 'x', preview.videoHeight);
+      setStatus(`Recording: ${preview.videoWidth}x${preview.videoHeight}. Perform actions and click "Mark Step" to capture.`);
+    };
+
+    if (autoDetect.checked) startAutoDetect();
+  } catch (e) {
+    console.error('getDisplayMedia error:', e);
+    setStatus(`Recording failed: ${e.message}`);
+  }
+});
+
+// Stop recording
+btnStop.addEventListener('click', stopRecording);
+
+function stopRecording() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  preview.srcObject = null;
+  preview.style.display = 'none';
+  placeholder.style.display = '';
+  btnStart.disabled = false;
+  btnStop.disabled = true;
+  btnMark.disabled = true;
+  recBadge.classList.remove('active');
+  stopAutoDetect();
+  prevFrameData = null;
+  setStatus('Recording stopped.');
+}
+
+// Mark step manually
+btnMark.addEventListener('click', () => captureStep('manual'));
+
+function captureStep(source) {
+  if (!stream) return;
+  const track = stream.getVideoTracks()[0];
+  const settings = track.getSettings();
+  canvas.width = settings.width || preview.videoWidth;
+  canvas.height = settings.height || preview.videoHeight;
+  ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/png');
+
+  // Grab current frame pixel data for local analysis
+  const currentImgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  const prevStep = steps.length > 0 ? steps[steps.length - 1] : null;
+
+  const step = {
+    id: Date.now() + Math.random(),
+    title: `Step ${steps.length + 1}`,
+    description: '',
+    image: dataUrl,
+    source,
+    _frameData: currentImgData,
+    _width: canvas.width,
+    _height: canvas.height
+  };
+
+  // Auto-generate a local description
+  step.description = generateLocalDescription(step, prevStep, steps.length);
+
+  steps.push(step);
+  renderSteps();
+  updateButtons();
+  setStatus(`Step ${steps.length} captured (${source}).`);
+}
+
+// Auto-detection
+autoDetect.addEventListener('change', () => {
+  if (autoDetect.checked && stream) startAutoDetect();
+  else stopAutoDetect();
+});
+
+function startAutoDetect() {
+  stopAutoDetect();
+  prevFrameData = null;
+  autoDetectInterval = setInterval(() => {
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+    const settings = track.getSettings();
+    canvas.width = settings.width || preview.videoWidth;
+    canvas.height = settings.height || preview.videoHeight;
+    ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
+
+    // Sample pixels for performance (every 10th pixel)
+    const w = canvas.width;
+    const h = canvas.height;
+    const imgData = ctx.getImageData(0, 0, w, h).data;
+
+    if (prevFrameData && prevFrameData.length === imgData.length) {
+      let diff = 0;
+      const sampleStep = 40; // check every 10th pixel (4 channels each)
+      const totalSamples = Math.floor(imgData.length / sampleStep);
+      for (let i = 0; i < imgData.length; i += sampleStep) {
+        diff += Math.abs(imgData[i] - prevFrameData[i]);
+      }
+      const avgDiff = diff / totalSamples;
+      const threshold = (21 - parseInt(sensitivityInput.value)) * 2;
+      if (avgDiff > threshold) {
+        captureStep('auto');
+      }
+    }
+    prevFrameData = new Uint8Array(imgData);
+  }, 2000);
+}
+
+function stopAutoDetect() {
+  if (autoDetectInterval) {
+    clearInterval(autoDetectInterval);
+    autoDetectInterval = null;
+  }
+}
+
+// Render steps
+function renderSteps() {
+  stepCountEl.textContent = `(${steps.length} captured)`;
+  stepsList.innerHTML = '';
+
+  steps.forEach((step, idx) => {
+    const card = document.createElement('div');
+    card.className = 'step-card';
+    card.draggable = true;
+    card.dataset.idx = idx;
+
+    card.innerHTML = `
+      <div class="drag-handle" title="Drag to reorder">&#x2630;</div>
+      <img class="step-thumb" src="${step.image}" alt="Step ${idx + 1}" data-idx="${idx}">
+      <div class="step-content">
+        <div class="step-top">
+          <span class="step-number">#${idx + 1}</span>
+          <input class="step-title" type="text" value="${escHtml(step.title)}" data-idx="${idx}">
+          <div class="step-actions">
+            <button class="btn-describe" data-idx="${idx}">Describe</button>
+            <button class="danger btn-delete" data-idx="${idx}">Delete</button>
+          </div>
+        </div>
+        <textarea class="step-description" placeholder="Description will appear here..." data-idx="${idx}">${escHtml(step.description)}</textarea>
+      </div>
+    `;
+
+    // Drag events
+    card.addEventListener('dragstart', (e) => {
+      dragSrcIdx = idx;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      dragSrcIdx = null;
+      document.querySelectorAll('.step-card').forEach(c => c.classList.remove('drag-over'));
+    });
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      card.classList.add('drag-over');
+    });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      if (dragSrcIdx !== null && dragSrcIdx !== idx) {
+        const [moved] = steps.splice(dragSrcIdx, 1);
+        steps.splice(idx, 0, moved);
+        renderSteps();
+      }
+    });
+
+    stepsList.appendChild(card);
+  });
+
+  // Event delegation
+  stepsList.querySelectorAll('.step-thumb').forEach(img => {
+    img.addEventListener('click', () => {
+      modalImg.src = steps[img.dataset.idx].image;
+      modal.classList.add('active');
+    });
+  });
+
+  stepsList.querySelectorAll('.step-title').forEach(input => {
+    input.addEventListener('input', () => {
+      steps[input.dataset.idx].title = input.value;
+    });
+  });
+
+  stepsList.querySelectorAll('.step-description').forEach(ta => {
+    ta.addEventListener('input', () => {
+      steps[ta.dataset.idx].description = ta.value;
+    });
+  });
+
+  stepsList.querySelectorAll('.btn-describe').forEach(btn => {
+    btn.addEventListener('click', () => describeStep(parseInt(btn.dataset.idx)));
+  });
+
+  stepsList.querySelectorAll('.btn-delete').forEach(btn => {
+    btn.addEventListener('click', () => {
+      steps.splice(parseInt(btn.dataset.idx), 1);
+      renderSteps();
+      updateButtons();
+      setStatus('Step deleted.');
+    });
+  });
+}
+
+function updateButtons() {
+  const hasSteps = steps.length > 0;
+  btnGenAll.disabled = !hasSteps;
+  btnExportHTML.disabled = !hasSteps;
+  btnCopyMD.disabled = !hasSteps;
+}
+
+// Local image analysis: detect change regions between two frames
+function analyzeChangeRegions(current, prev) {
+  if (!prev || !prev._frameData || !current._frameData) return null;
+  if (current._frameData.length !== prev._frameData.length) return null;
+
+  const w = current._width;
+  const h = current._height;
+  const cols = 4, rows = 4;
+  const cellW = Math.floor(w / cols);
+  const cellH = Math.floor(h / rows);
+  const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
+  const counts = Array.from({ length: rows }, () => Array(cols).fill(0));
+
+  // Sample every 20th pixel for speed
+  for (let y = 0; y < h; y += 5) {
+    for (let x = 0; x < w; x += 5) {
+      const i = (y * w + x) * 4;
+      const dr = Math.abs(current._frameData[i] - prev._frameData[i]);
+      const dg = Math.abs(current._frameData[i+1] - prev._frameData[i+1]);
+      const db = Math.abs(current._frameData[i+2] - prev._frameData[i+2]);
+      const diff = (dr + dg + db) / 3;
+      const col = Math.min(Math.floor(x / cellW), cols - 1);
+      const row = Math.min(Math.floor(y / cellH), rows - 1);
+      grid[row][col] += diff;
+      counts[row][col]++;
+    }
+  }
+
+  // Normalize
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      grid[r][c] = counts[r][c] ? grid[r][c] / counts[r][c] : 0;
+
+  // Find cells with significant change (> 8 avg diff)
+  const changed = [];
+  let totalChange = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      totalChange += grid[r][c];
+      if (grid[r][c] > 8) {
+        changed.push({ row: r, col: c, intensity: grid[r][c] });
+      }
+    }
+  }
+
+  changed.sort((a, b) => b.intensity - a.intensity);
+  return { grid, changed, totalChange, rows, cols };
+}
+
+function describeRegion(row, col, rows, cols) {
+  const vPos = row < rows / 3 ? 'top' : row >= (rows * 2 / 3) ? 'bottom' : 'middle';
+  const hPos = col < cols / 3 ? 'left' : col >= (cols * 2 / 3) ? 'right' : 'center';
+  if (vPos === 'middle' && hPos === 'center') return 'center';
+  if (hPos === 'center') return vPos;
+  if (vPos === 'middle') return hPos;
+  return `${vPos}-${hPos}`;
+}
+
+function generateLocalDescription(step, prevStep, index) {
+  if (index === 0 || !prevStep) {
+    return 'Observe the initial state of the screen before performing any actions.';
+  }
+
+  const analysis = analyzeChangeRegions(step, prevStep);
+  if (!analysis || analysis.changed.length === 0) {
+    return 'Continue from the previous step. A minor change was detected on screen.';
+  }
+
+  const { changed, totalChange, rows, cols } = analysis;
+  const changePercent = (changed.length / (rows * cols) * 100).toFixed(0);
+
+  // Describe primary change region
+  const primary = changed[0];
+  const primaryRegion = describeRegion(primary.row, primary.col, rows, cols);
+
+  if (changed.length >= rows * cols * 0.6) {
+    return 'Observe a major screen change — a new page, window, or dialog may have appeared.';
+  }
+
+  if (changed.length >= 3) {
+    const regions = [...new Set(changed.slice(0, 3).map(c => describeRegion(c.row, c.col, rows, cols)))];
+    return `Notice changes across multiple areas of the screen (${regions.join(', ')}). A significant interaction occurred.`;
+  }
+
+  const intensityWord = primary.intensity > 40 ? 'significant' : 'subtle';
+  return `Look at the ${primaryRegion} area of the screen where a ${intensityWord} change occurred. An action was performed in this region.`;
+}
+
+// Describe step: uses API if key present, otherwise regenerates local description
+async function describeStep(idx) {
+  const key = apiKeyInput.value.trim();
+
+  if (!key) {
+    // Local description (regenerate)
+    const step = steps[idx];
+    const prevStep = idx > 0 ? steps[idx - 1] : null;
+    step.description = generateLocalDescription(step, prevStep, idx);
+    renderSteps();
+    setStatus(`Local description generated for Step ${idx + 1}. Add an API key for AI-powered descriptions.`);
+    return;
+  }
+
+  const step = steps[idx];
+  const base64 = step.image.split(',')[1];
+  setStatus(`<span class="spinner"></span>Generating AI description for Step ${idx + 1}...`);
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 256,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: 'image/png', data: base64 }
+            },
+            {
+              type: 'text',
+              text: 'Describe what the user is doing in this screenshot as a single step in a how-to guide. Be concise and start with an action verb. Do not include a step number.'
+            }
+          ]
+        }]
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `API error ${res.status}`);
+    }
+
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '';
+    steps[idx].description = text;
+    renderSteps();
+    setStatus(`AI description generated for Step ${idx + 1}.`);
+  } catch (e) {
+    setStatus(`Error: ${e.message}`);
+  }
+}
+
+btnGenAll.addEventListener('click', async () => {
+  btnGenAll.disabled = true;
+  const key = apiKeyInput.value.trim();
+
+  for (let i = 0; i < steps.length; i++) {
+    await describeStep(i);
+  }
+
+  btnGenAll.disabled = false;
+  setStatus(key
+    ? 'All AI descriptions generated.'
+    : 'All local descriptions generated. Add an API key for AI-powered descriptions.');
+});
+
+// Export HTML
+btnExportHTML.addEventListener('click', () => {
+  const html = buildExportHTML();
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'how-to-manual.html';
+  a.click();
+  URL.revokeObjectURL(url);
+  setStatus('HTML manual downloaded.');
+});
+
+function buildExportHTML() {
+  let stepsHtml = '';
+  steps.forEach((step, idx) => {
+    stepsHtml += `
+      <div style="margin-bottom:32px;page-break-inside:avoid;">
+        <h2 style="color:#1e293b;margin-bottom:8px;">Step ${idx + 1}: ${escHtml(step.title)}</h2>
+        <img src="${step.image}" alt="Step ${idx + 1}" style="max-width:100%;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:10px;">
+        <p style="color:#334155;font-size:15px;line-height:1.6;">${escHtml(step.description) || '<em>No description</em>'}</p>
+      </div>`;
+  });
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How-To Manual</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #1e293b; }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  .meta { color: #64748b; font-size: 14px; margin-bottom: 40px; }
+  @media print { body { padding: 20px; } }
+</style>
+</head>
+<body>
+<h1>How-To Manual</h1>
+<p class="meta">Generated by StepCapture on ${new Date().toLocaleDateString()}</p>
+${stepsHtml}
+</body>
+</html>`;
+}
+
+// Copy as Markdown
+btnCopyMD.addEventListener('click', async () => {
+  let md = `# How-To Manual\n\n*Generated by StepCapture on ${new Date().toLocaleDateString()}*\n\n`;
+  steps.forEach((step, idx) => {
+    md += `## Step ${idx + 1}: ${step.title}\n\n`;
+    md += `![Step ${idx + 1}](${step.image})\n\n`;
+    md += `${step.description || '_No description_'}\n\n---\n\n`;
+  });
+
+  try {
+    await navigator.clipboard.writeText(md);
+    setStatus('Markdown copied to clipboard.');
+  } catch {
+    setStatus('Failed to copy to clipboard.');
+  }
+});
+
+// Helpers
+function setStatus(html) { statusEl.innerHTML = html; }
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
