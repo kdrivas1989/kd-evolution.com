@@ -711,92 +711,169 @@ function updateButtons() {
   btnCopyMD.disabled = !hasSteps;
 }
 
-// Local image analysis: detect change regions between two frames
-function analyzeChangeRegions(current, prev) {
+// Smart local image analysis
+function analyzeFrame(current, prev) {
   if (!prev || !prev._frameData || !current._frameData) return null;
   if (current._frameData.length !== prev._frameData.length) return null;
 
-  const w = current._width;
-  const h = current._height;
-  const cols = 4, rows = 4;
-  const cellW = Math.floor(w / cols);
-  const cellH = Math.floor(h / rows);
+  const w = current._width, h = current._height;
+  const cur = current._frameData, prv = prev._frameData;
+  const cols = 8, rows = 6;
+  const cellW = Math.floor(w / cols), cellH = Math.floor(h / rows);
   const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
   const counts = Array.from({ length: rows }, () => Array(cols).fill(0));
 
-  // Sample every 20th pixel for speed
-  for (let y = 0; y < h; y += 5) {
-    for (let x = 0; x < w; x += 5) {
+  for (let y = 0; y < h; y += 4) {
+    for (let x = 0; x < w; x += 4) {
       const i = (y * w + x) * 4;
-      const dr = Math.abs(current._frameData[i] - prev._frameData[i]);
-      const dg = Math.abs(current._frameData[i+1] - prev._frameData[i+1]);
-      const db = Math.abs(current._frameData[i+2] - prev._frameData[i+2]);
-      const diff = (dr + dg + db) / 3;
-      const col = Math.min(Math.floor(x / cellW), cols - 1);
-      const row = Math.min(Math.floor(y / cellH), rows - 1);
-      grid[row][col] += diff;
-      counts[row][col]++;
+      const diff = (Math.abs(cur[i] - prv[i]) + Math.abs(cur[i+1] - prv[i+1]) + Math.abs(cur[i+2] - prv[i+2])) / 3;
+      const c = Math.min(Math.floor(x / cellW), cols - 1);
+      const r = Math.min(Math.floor(y / cellH), rows - 1);
+      grid[r][c] += diff;
+      counts[r][c]++;
     }
   }
 
-  // Normalize
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++)
       grid[r][c] = counts[r][c] ? grid[r][c] / counts[r][c] : 0;
 
-  // Find cells with significant change (> 8 avg diff)
-  const changed = [];
-  let totalChange = 0;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      totalChange += grid[r][c];
-      if (grid[r][c] > 8) {
-        changed.push({ row: r, col: c, intensity: grid[r][c] });
+  const changedCells = [];
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++)
+      if (grid[r][c] > 5) changedCells.push({ r, c, v: grid[r][c] });
+
+  if (changedCells.length === 0) return { type: 'minimal' };
+
+  const changeFraction = changedCells.length / (rows * cols);
+
+  // Bounding box of changes
+  let minR = rows, maxR = 0, minC = cols, maxC = 0;
+  for (const cell of changedCells) {
+    minR = Math.min(minR, cell.r); maxR = Math.max(maxR, cell.r);
+    minC = Math.min(minC, cell.c); maxC = Math.max(maxC, cell.c);
+  }
+  const boxW = maxC - minC + 1, boxH = maxR - minR + 1;
+
+  // Detect scroll: check if horizontal bands of pixels shifted vertically
+  let scrollScore = 0;
+  const bandH = 40, sampleX = 8;
+  for (let band = 0; band < 5; band++) {
+    const srcY = Math.min(h * 0.2 + band * bandH, h - bandH - 1);
+    for (let offset = -80; offset <= 80; offset += 8) {
+      if (offset === 0) continue;
+      const dstY = srcY + offset;
+      if (dstY < 0 || dstY + bandH > h) continue;
+      let match = 0, total = 0;
+      for (let dy = 0; dy < bandH; dy += 8) {
+        for (let sx = 0; sx < sampleX; sx++) {
+          const x = Math.floor((sx + 0.5) * w / sampleX);
+          const si = ((srcY + dy) * w + x) * 4;
+          const di = ((dstY + dy) * w + x) * 4;
+          const d = Math.abs(prv[si] - cur[di]) + Math.abs(prv[si+1] - cur[di+1]) + Math.abs(prv[si+2] - cur[di+2]);
+          total++;
+          if (d < 30) match++;
+        }
       }
+      if (total > 0 && match / total > 0.7) { scrollScore++; break; }
     }
   }
+  const isScroll = scrollScore >= 3;
 
-  changed.sort((a, b) => b.intensity - a.intensity);
-  return { grid, changed, totalChange, rows, cols };
-}
+  // Detect modal/overlay: edges got darker
+  let edgeDarker = 0, edgeSamples = 0;
+  for (let y = 0; y < h; y += 20) {
+    for (const x of [2, w - 3]) {
+      const i = (y * w + x) * 4;
+      const prevBright = (prv[i] + prv[i+1] + prv[i+2]) / 3;
+      const curBright = (cur[i] + cur[i+1] + cur[i+2]) / 3;
+      edgeSamples++;
+      if (curBright < prevBright - 20) edgeDarker++;
+    }
+  }
+  const isModal = edgeSamples > 0 && (edgeDarker / edgeSamples) > 0.4 && changeFraction > 0.2;
 
-function describeRegion(row, col, rows, cols) {
-  const vPos = row < rows / 3 ? 'top' : row >= (rows * 2 / 3) ? 'bottom' : 'middle';
-  const hPos = col < cols / 3 ? 'left' : col >= (cols * 2 / 3) ? 'right' : 'center';
-  if (vPos === 'middle' && hPos === 'center') return 'center';
-  if (hPos === 'center') return vPos;
-  if (vPos === 'middle') return hPos;
-  return `${vPos}-${hPos}`;
+  // Detect highlight/selection: new colored region appeared
+  let colorShift = 0, colorSamples = 0;
+  for (const cell of changedCells) {
+    const cy = Math.floor((cell.r + 0.5) * cellH);
+    const cx = Math.floor((cell.c + 0.5) * cellW);
+    const i = (cy * w + cx) * 4;
+    const satCur = Math.max(cur[i], cur[i+1], cur[i+2]) - Math.min(cur[i], cur[i+1], cur[i+2]);
+    const satPrv = Math.max(prv[i], prv[i+1], prv[i+2]) - Math.min(prv[i], prv[i+1], prv[i+2]);
+    colorSamples++;
+    if (satCur > satPrv + 30) colorShift++;
+  }
+  const isHighlight = colorSamples > 0 && (colorShift / colorSamples) > 0.4;
+
+  // Classify UI region based on position
+  const centerR = (minR + maxR) / 2, centerC = (minC + maxC) / 2;
+  let uiRegion;
+  if (centerR < rows * 0.18) uiRegion = 'toolbar or menu bar';
+  else if (centerR < rows * 0.3 && boxW > cols * 0.5) uiRegion = 'navigation or tab bar';
+  else if (centerR > rows * 0.85) uiRegion = 'status bar or bottom panel';
+  else if (centerC < cols * 0.22) uiRegion = 'sidebar or file tree';
+  else if (centerC > cols * 0.78 && boxW < cols * 0.3) uiRegion = 'right panel or properties';
+  else uiRegion = 'main content area';
+
+  // Determine change type
+  let type;
+  if (isScroll) type = 'scroll';
+  else if (isModal) type = 'modal';
+  else if (changeFraction > 0.75) type = 'navigation';
+  else if (changeFraction > 0.45) type = 'major_ui_change';
+  else if (isHighlight && changedCells.length <= 6) type = 'selection';
+  else if (boxW >= cols * 0.6 && boxH <= 2) type = 'toolbar_action';
+  else if (boxH >= rows * 0.6 && boxW <= 2) type = 'sidebar_action';
+  else if (changedCells.length <= 3) type = 'click_or_input';
+  else if (changedCells.length <= 8) type = 'panel_change';
+  else type = 'content_update';
+
+  return { type, changeFraction, uiRegion, boxW, boxH, changedCells: changedCells.length, isHighlight, rows, cols };
 }
 
 function generateLocalDescription(step, prevStep, index) {
   if (index === 0 || !prevStep) {
-    return 'Observe the initial state of the screen before performing any actions.';
+    return 'This is the starting screen. Note the current layout and any open applications or windows before beginning.';
   }
 
-  const analysis = analyzeChangeRegions(step, prevStep);
-  if (!analysis || analysis.changed.length === 0) {
-    return 'Continue from the previous step. A minor change was detected on screen.';
+  const a = analyzeFrame(step, prevStep);
+  if (!a || a.type === 'minimal') {
+    return 'The screen appears mostly unchanged. A very minor update may have occurred (e.g., cursor blink or animation).';
   }
 
-  const { changed, totalChange, rows, cols } = analysis;
-  const changePercent = (changed.length / (rows * cols) * 100).toFixed(0);
+  switch (a.type) {
+    case 'scroll':
+      return `Scroll within the ${a.uiRegion} to reveal additional content. The page or panel content has shifted to show new information.`;
 
-  // Describe primary change region
-  const primary = changed[0];
-  const primaryRegion = describeRegion(primary.row, primary.col, rows, cols);
+    case 'modal':
+      return 'A dialog box, popup, or modal overlay appeared on screen. Review its contents and determine the appropriate action (confirm, cancel, or fill in details).';
 
-  if (changed.length >= rows * cols * 0.6) {
-    return 'Observe a major screen change — a new page, window, or dialog may have appeared.';
+    case 'navigation':
+      return 'Navigate to a new screen or page. The entire view has changed, indicating a page load, tab switch, or application change.';
+
+    case 'major_ui_change':
+      return `A large portion of the interface updated. This could be expanding a panel, opening a new section within the ${a.uiRegion}, or loading new content.`;
+
+    case 'selection':
+      return `Select or highlight an item in the ${a.uiRegion}. A new element appears focused or selected, indicated by a color change.`;
+
+    case 'toolbar_action':
+      return `Click a button or option in the ${a.uiRegion}. A horizontal control area updated, suggesting a toolbar button was pressed or a menu option was toggled.`;
+
+    case 'sidebar_action':
+      return `Interact with the ${a.uiRegion}. A vertical panel or tree view updated, suggesting a folder was expanded, a file was selected, or a menu section was opened.`;
+
+    case 'click_or_input':
+      return `Click or type in the ${a.uiRegion}. A small, focused change occurred, suggesting a button click, text entry, checkbox toggle, or dropdown selection.`;
+
+    case 'panel_change':
+      return `Update the ${a.uiRegion}. A section of the interface refreshed — content may have been added, edited, or rearranged within this area.`;
+
+    case 'content_update':
+    default:
+      return `Observe changes in the ${a.uiRegion}. The content in this area was modified, which may include text updates, list changes, or visual rearrangement.`;
   }
-
-  if (changed.length >= 3) {
-    const regions = [...new Set(changed.slice(0, 3).map(c => describeRegion(c.row, c.col, rows, cols)))];
-    return `Notice changes across multiple areas of the screen (${regions.join(', ')}). A significant interaction occurred.`;
-  }
-
-  const intensityWord = primary.intensity > 40 ? 'significant' : 'subtle';
-  return `Look at the ${primaryRegion} area of the screen where a ${intensityWord} change occurred. An action was performed in this region.`;
 }
 
 // Describe step: uses API if key present, otherwise regenerates local description
