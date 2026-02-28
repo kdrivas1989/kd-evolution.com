@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>StepCapture</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -534,7 +535,7 @@ function stopRecording() {
 // Mark step manually
 btnMark.addEventListener('click', () => captureStep('manual'));
 
-function captureStep(source) {
+async function captureStep(source) {
   if (!stream) return;
   const track = stream.getVideoTracks()[0];
   const settings = track.getSettings();
@@ -543,28 +544,31 @@ function captureStep(source) {
   ctx.drawImage(preview, 0, 0, canvas.width, canvas.height);
   const dataUrl = canvas.toDataURL('image/png');
 
-  // Grab current frame pixel data for local analysis
   const currentImgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
   const prevStep = steps.length > 0 ? steps[steps.length - 1] : null;
 
   const step = {
     id: Date.now() + Math.random(),
     title: `Step ${steps.length + 1}`,
-    description: '',
+    description: 'Analyzing screenshot...',
     image: dataUrl,
     source,
     _frameData: currentImgData,
     _width: canvas.width,
-    _height: canvas.height
+    _height: canvas.height,
+    _ocrCache: null
   };
-
-  // Auto-generate a local description
-  step.description = generateLocalDescription(step, prevStep, steps.length);
 
   steps.push(step);
   renderSteps();
   updateButtons();
-  setStatus(`Step ${steps.length} captured (${source}).`);
+  const stepNum = steps.length;
+  setStatus(`<span class="spinner"></span>Step ${stepNum} captured. Reading screen text...`);
+
+  // Generate description async with OCR
+  step.description = await generateSmartDescription(step, prevStep, stepNum - 1);
+  renderSteps();
+  setStatus(`Step ${stepNum} described.`);
 }
 
 // Auto-detection
@@ -711,14 +715,45 @@ function updateButtons() {
   btnCopyMD.disabled = !hasSteps;
 }
 
-// Smart local image analysis
+// ===== OCR Engine =====
+let ocrWorker = null;
+async function getOCRWorker() {
+  if (!ocrWorker) {
+    ocrWorker = await Tesseract.createWorker('eng');
+  }
+  return ocrWorker;
+}
+
+async function ocrImage(imageDataUrl) {
+  const worker = await getOCRWorker();
+  const { data } = await worker.recognize(imageDataUrl);
+  return data.words
+    .filter(w => w.confidence > 40 && w.text.trim().length > 0)
+    .map(w => ({
+      text: w.text.trim(),
+      x: w.bbox.x0, y: w.bbox.y0,
+      x1: w.bbox.x1, y1: w.bbox.y1,
+      cx: (w.bbox.x0 + w.bbox.x1) / 2,
+      cy: (w.bbox.y0 + w.bbox.y1) / 2,
+      confidence: w.confidence
+    }));
+}
+
+// Cache OCR results per step to avoid re-running
+async function getStepOCR(step) {
+  if (step._ocrCache) return step._ocrCache;
+  step._ocrCache = await ocrImage(step.image);
+  return step._ocrCache;
+}
+
+// ===== Pixel Change Analysis =====
 function analyzeFrame(current, prev) {
   if (!prev || !prev._frameData || !current._frameData) return null;
   if (current._frameData.length !== prev._frameData.length) return null;
 
   const w = current._width, h = current._height;
   const cur = current._frameData, prv = prev._frameData;
-  const cols = 8, rows = 6;
+  const cols = 10, rows = 8;
   const cellW = Math.floor(w / cols), cellH = Math.floor(h / rows);
   const grid = Array.from({ length: rows }, () => Array(cols).fill(0));
   const counts = Array.from({ length: rows }, () => Array(cols).fill(0));
@@ -747,7 +782,6 @@ function analyzeFrame(current, prev) {
 
   const changeFraction = changedCells.length / (rows * cols);
 
-  // Bounding box of changes
   let minR = rows, maxR = 0, minC = cols, maxC = 0;
   for (const cell of changedCells) {
     minR = Math.min(minR, cell.r); maxR = Math.max(maxR, cell.r);
@@ -755,11 +789,25 @@ function analyzeFrame(current, prev) {
   }
   const boxW = maxC - minC + 1, boxH = maxR - minR + 1;
 
-  // Detect scroll: check if horizontal bands of pixels shifted vertically
+  // Weighted center of change in pixel coords
+  let wSum = 0, wxSum = 0, wySum = 0;
+  for (const cell of changedCells) {
+    wSum += cell.v;
+    wxSum += cell.v * (cell.c + 0.5) * cellW;
+    wySum += cell.v * (cell.r + 0.5) * cellH;
+  }
+  const changeCenterX = wxSum / wSum;
+  const changeCenterY = wySum / wSum;
+
+  // Change bounding box in pixel coords
+  const pixMinX = minC * cellW, pixMaxX = (maxC + 1) * cellW;
+  const pixMinY = minR * cellH, pixMaxY = (maxR + 1) * cellH;
+
+  // Detect scroll
   let scrollScore = 0;
   const bandH = 40, sampleX = 8;
   for (let band = 0; band < 5; band++) {
-    const srcY = Math.min(h * 0.2 + band * bandH, h - bandH - 1);
+    const srcY = Math.min(Math.floor(h * 0.2 + band * bandH), h - bandH - 1);
     for (let offset = -80; offset <= 80; offset += 8) {
       if (offset === 0) continue;
       const dstY = srcY + offset;
@@ -780,7 +828,7 @@ function analyzeFrame(current, prev) {
   }
   const isScroll = scrollScore >= 3;
 
-  // Detect modal/overlay: edges got darker
+  // Detect modal overlay
   let edgeDarker = 0, edgeSamples = 0;
   for (let y = 0; y < h; y += 20) {
     for (const x of [2, w - 3]) {
@@ -793,87 +841,207 @@ function analyzeFrame(current, prev) {
   }
   const isModal = edgeSamples > 0 && (edgeDarker / edgeSamples) > 0.4 && changeFraction > 0.2;
 
-  // Detect highlight/selection: new colored region appeared
-  let colorShift = 0, colorSamples = 0;
-  for (const cell of changedCells) {
-    const cy = Math.floor((cell.r + 0.5) * cellH);
-    const cx = Math.floor((cell.c + 0.5) * cellW);
-    const i = (cy * w + cx) * 4;
-    const satCur = Math.max(cur[i], cur[i+1], cur[i+2]) - Math.min(cur[i], cur[i+1], cur[i+2]);
-    const satPrv = Math.max(prv[i], prv[i+1], prv[i+2]) - Math.min(prv[i], prv[i+1], prv[i+2]);
-    colorSamples++;
-    if (satCur > satPrv + 30) colorShift++;
-  }
-  const isHighlight = colorSamples > 0 && (colorShift / colorSamples) > 0.4;
-
-  // Classify UI region based on position
-  const centerR = (minR + maxR) / 2, centerC = (minC + maxC) / 2;
-  let uiRegion;
-  if (centerR < rows * 0.18) uiRegion = 'toolbar or menu bar';
-  else if (centerR < rows * 0.3 && boxW > cols * 0.5) uiRegion = 'navigation or tab bar';
-  else if (centerR > rows * 0.85) uiRegion = 'status bar or bottom panel';
-  else if (centerC < cols * 0.22) uiRegion = 'sidebar or file tree';
-  else if (centerC > cols * 0.78 && boxW < cols * 0.3) uiRegion = 'right panel or properties';
-  else uiRegion = 'main content area';
-
-  // Determine change type
   let type;
   if (isScroll) type = 'scroll';
   else if (isModal) type = 'modal';
   else if (changeFraction > 0.75) type = 'navigation';
   else if (changeFraction > 0.45) type = 'major_ui_change';
-  else if (isHighlight && changedCells.length <= 6) type = 'selection';
+  else if (changedCells.length <= 4) type = 'click';
   else if (boxW >= cols * 0.6 && boxH <= 2) type = 'toolbar_action';
   else if (boxH >= rows * 0.6 && boxW <= 2) type = 'sidebar_action';
-  else if (changedCells.length <= 3) type = 'click_or_input';
-  else if (changedCells.length <= 8) type = 'panel_change';
   else type = 'content_update';
 
-  return { type, changeFraction, uiRegion, boxW, boxH, changedCells: changedCells.length, isHighlight, rows, cols };
+  return {
+    type, changeFraction, changedCells: changedCells.length,
+    cx: changeCenterX, cy: changeCenterY,
+    pixMinX, pixMinY, pixMaxX, pixMaxY,
+    imgW: w, imgH: h
+  };
 }
 
-function generateLocalDescription(step, prevStep, index) {
+// ===== Smart OCR-Powered Description =====
+function getWordsNear(words, cx, cy, radius) {
+  return words
+    .map(w => ({ ...w, dist: Math.hypot(w.cx - cx, w.cy - cy) }))
+    .filter(w => w.dist < radius)
+    .sort((a, b) => a.dist - b.dist);
+}
+
+function getWordsInBox(words, x1, y1, x2, y2, pad = 0) {
+  return words.filter(w =>
+    w.cx >= x1 - pad && w.cx <= x2 + pad &&
+    w.cy >= y1 - pad && w.cy <= y2 + pad
+  );
+}
+
+function cleanText(words) {
+  // Join nearby words into readable phrases, filter junk
+  return words
+    .map(w => w.text)
+    .filter(t => t.length > 1 || /[A-Za-z0-9]/.test(t))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findBestLabel(words, cx, cy, radius) {
+  const nearby = getWordsNear(words, cx, cy, radius);
+  if (nearby.length === 0) return null;
+
+  // Group words on the same line (similar y)
+  const lines = [];
+  for (const w of nearby) {
+    const line = lines.find(l => Math.abs(l[0].cy - w.cy) < 12);
+    if (line) line.push(w);
+    else lines.push([w]);
+  }
+
+  // Sort each line by x, pick the line closest to center
+  lines.forEach(l => l.sort((a, b) => a.x - b.x));
+  lines.sort((a, b) => {
+    const aDist = Math.min(...a.map(w => w.dist));
+    const bDist = Math.min(...b.map(w => w.dist));
+    return aDist - bDist;
+  });
+
+  const bestLine = lines[0];
+  const text = cleanText(bestLine);
+  return text.length >= 2 ? text : null;
+}
+
+function findNewTextInArea(curWords, prevWords, x1, y1, x2, y2) {
+  const pad = 30;
+  const curInArea = getWordsInBox(curWords, x1, y1, x2, y2, pad);
+  const prevTexts = new Set(prevWords.map(w => w.text.toLowerCase()));
+  const newWords = curInArea.filter(w => !prevTexts.has(w.text.toLowerCase()));
+  const text = cleanText(newWords);
+  return text.length >= 2 ? text : null;
+}
+
+function findProminentNewText(curWords, prevWords) {
+  const prevTexts = new Set(prevWords.map(w => w.text.toLowerCase()));
+  const newWords = curWords.filter(w => !prevTexts.has(w.text.toLowerCase()) && w.confidence > 60);
+  if (newWords.length === 0) return null;
+  // Group into lines, find the topmost prominent line (likely a title/heading)
+  const lines = [];
+  for (const w of newWords) {
+    const line = lines.find(l => Math.abs(l[0].cy - w.cy) < 15);
+    if (line) line.push(w);
+    else lines.push([w]);
+  }
+  lines.sort((a, b) => a[0].cy - b[0].cy);
+  for (const line of lines.slice(0, 3)) {
+    line.sort((a, b) => a.x - b.x);
+    const text = cleanText(line);
+    if (text.length >= 3) return text;
+  }
+  return null;
+}
+
+async function generateSmartDescription(step, prevStep, index) {
   if (index === 0 || !prevStep) {
-    return 'This is the starting screen. Note the current layout and any open applications or windows before beginning.';
+    try {
+      const words = await getStepOCR(step);
+      // Find top-left text as likely app/page title
+      const topWords = words.filter(w => w.cy < step._height * 0.15).sort((a, b) => a.x - b.x);
+      const title = cleanText(topWords.slice(0, 8));
+      if (title.length > 2) {
+        return `Start on the screen showing "${title}".`;
+      }
+    } catch (e) { console.error('OCR error:', e); }
+    return 'Start from this initial screen.';
   }
 
-  const a = analyzeFrame(step, prevStep);
-  if (!a || a.type === 'minimal') {
-    return 'The screen appears mostly unchanged. A very minor update may have occurred (e.g., cursor blink or animation).';
+  const analysis = analyzeFrame(step, prevStep);
+  if (!analysis || analysis.type === 'minimal') {
+    return 'No significant change detected on screen.';
   }
 
-  switch (a.type) {
-    case 'scroll':
-      return `Scroll within the ${a.uiRegion} to reveal additional content. The page or panel content has shifted to show new information.`;
+  try {
+    const { type, cx, cy, pixMinX, pixMinY, pixMaxX, pixMaxY, imgW, imgH } = analysis;
+    const searchRadius = Math.max(imgW, imgH) * 0.08;
 
-    case 'modal':
-      return 'A dialog box, popup, or modal overlay appeared on screen. Review its contents and determine the appropriate action (confirm, cancel, or fill in details).';
+    if (type === 'click' || type === 'toolbar_action' || type === 'sidebar_action') {
+      // OCR the PREVIOUS frame to find what was clicked
+      const prevWords = await getStepOCR(prevStep);
+      const label = findBestLabel(prevWords, cx, cy, searchRadius);
+      if (label) {
+        return `Click '${label}'.`;
+      }
+      // Try current frame too
+      const curWords = await getStepOCR(step);
+      const curLabel = findBestLabel(curWords, cx, cy, searchRadius);
+      if (curLabel) {
+        return `Click '${curLabel}'.`;
+      }
+    }
 
-    case 'navigation':
-      return 'Navigate to a new screen or page. The entire view has changed, indicating a page load, tab switch, or application change.';
+    if (type === 'modal') {
+      const curWords = await getStepOCR(step);
+      const prevWords = await getStepOCR(prevStep);
+      const newText = findProminentNewText(curWords, prevWords);
+      if (newText) {
+        return `A '${newText}' dialog appears. Review and respond.`;
+      }
+      // Try to find any title text in center
+      const centerWords = getWordsInBox(curWords,
+        imgW * 0.2, imgH * 0.2, imgW * 0.8, imgH * 0.5);
+      const title = cleanText(centerWords.slice(0, 6));
+      if (title.length > 2) {
+        return `A dialog appears showing "${title}".`;
+      }
+      return 'A dialog or popup appears on screen.';
+    }
 
-    case 'major_ui_change':
-      return `A large portion of the interface updated. This could be expanding a panel, opening a new section within the ${a.uiRegion}, or loading new content.`;
+    if (type === 'navigation' || type === 'major_ui_change') {
+      const curWords = await getStepOCR(step);
+      const prevWords = await getStepOCR(prevStep);
+      const newText = findProminentNewText(curWords, prevWords);
+      if (newText) {
+        return `Navigate to '${newText}'.`;
+      }
+      // Check heading area of new page
+      const topWords = curWords.filter(w => w.cy < imgH * 0.2).sort((a, b) => a.x - b.x);
+      const heading = cleanText(topWords.slice(0, 8));
+      if (heading.length > 2) {
+        return `The screen changes to show "${heading}".`;
+      }
+      return type === 'navigation'
+        ? 'Navigate to a new page or screen.'
+        : 'The interface updates with new content.';
+    }
 
-    case 'selection':
-      return `Select or highlight an item in the ${a.uiRegion}. A new element appears focused or selected, indicated by a color change.`;
+    if (type === 'scroll') {
+      const curWords = await getStepOCR(step);
+      const prevWords = await getStepOCR(prevStep);
+      const newText = findNewTextInArea(curWords, prevWords,
+        pixMinX, pixMinY, pixMaxX, pixMaxY);
+      if (newText) {
+        return `Scroll to reveal "${newText}".`;
+      }
+      return 'Scroll down to see more content.';
+    }
 
-    case 'toolbar_action':
-      return `Click a button or option in the ${a.uiRegion}. A horizontal control area updated, suggesting a toolbar button was pressed or a menu option was toggled.`;
+    // content_update fallback: describe what changed using OCR
+    if (type === 'content_update') {
+      const curWords = await getStepOCR(step);
+      const prevWords = await getStepOCR(prevStep);
+      const newText = findNewTextInArea(curWords, prevWords,
+        pixMinX, pixMinY, pixMaxX, pixMaxY);
+      if (newText) {
+        return `New content appears: "${newText}".`;
+      }
+      const label = findBestLabel(curWords, cx, cy, searchRadius);
+      if (label) {
+        return `The '${label}' area updates with new content.`;
+      }
+    }
 
-    case 'sidebar_action':
-      return `Interact with the ${a.uiRegion}. A vertical panel or tree view updated, suggesting a folder was expanded, a file was selected, or a menu section was opened.`;
-
-    case 'click_or_input':
-      return `Click or type in the ${a.uiRegion}. A small, focused change occurred, suggesting a button click, text entry, checkbox toggle, or dropdown selection.`;
-
-    case 'panel_change':
-      return `Update the ${a.uiRegion}. A section of the interface refreshed — content may have been added, edited, or rearranged within this area.`;
-
-    case 'content_update':
-    default:
-      return `Observe changes in the ${a.uiRegion}. The content in this area was modified, which may include text updates, list changes, or visual rearrangement.`;
+  } catch (e) {
+    console.error('OCR description error:', e);
   }
+
+  return 'An interaction occurred on screen. Edit this description to add details.';
 }
 
 // Describe step: uses API if key present, otherwise regenerates local description
@@ -881,12 +1049,12 @@ async function describeStep(idx) {
   const key = apiKeyInput.value.trim();
 
   if (!key) {
-    // Local description (regenerate)
+    setStatus(`<span class="spinner"></span>Re-analyzing Step ${idx + 1}...`);
     const step = steps[idx];
     const prevStep = idx > 0 ? steps[idx - 1] : null;
-    step.description = generateLocalDescription(step, prevStep, idx);
+    step.description = await generateSmartDescription(step, prevStep, idx);
     renderSteps();
-    setStatus(`Local description generated for Step ${idx + 1}. Add an API key for AI-powered descriptions.`);
+    setStatus(`Description updated for Step ${idx + 1}.`);
     return;
   }
 
