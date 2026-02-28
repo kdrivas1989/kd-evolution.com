@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VideoGridOverlay</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <div class="media-area" id="mediaArea">
+      <video id="videoEl" muted playsinline></video>
+      <img id="imageEl" alt="">
+      <canvas id="gridCanvas"></canvas>
+      <div class="placeholder" id="placeholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="20" height="20" rx="2"/>
+          <path d="M12 8v8M8 12h8"/>
+        </svg>
+        <p>Open a video or photo, or drag and drop here</p>
+      </div>
+    </div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-scroll">
+        <!-- Media Section -->
+        <section class="panel-section">
+          <h3>Media</h3>
+          <input type="file" id="fileInput" accept="video/*,image/*" hidden>
+          <button class="btn btn-primary" id="btnOpen">Open Video / Photo&hellip;</button>
+          <p class="file-name" id="fileName"></p>
+          <button class="btn" id="btnPlayPause" disabled>Play</button>
+        </section>
+
+        <hr class="divider">
+
+        <!-- Grid Size Section -->
+        <section class="panel-section">
+          <h3>Grid Size</h3>
+          <div class="row">
+            <label for="gridN">N&times;N</label>
+            <input type="number" id="gridN" min="1" max="128" value="4">
+          </div>
+          <p class="hint" id="gridNHint">Effective: 4&times;4</p>
+        </section>
+
+        <hr class="divider">
+
+        <!-- Cell Size Section -->
+        <section class="panel-section">
+          <h3>Cell Size</h3>
+          <div class="row">
+            <input type="range" id="cellSize" min="10" max="400" value="60">
+            <span class="value" id="cellSizeValue">60 px</span>
+          </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- Rotation Section -->
+        <section class="panel-section">
+          <h3>Rotation</h3>
+          <div class="row">
+            <input type="range" id="rotation" min="-180" max="180" value="0">
+            <span class="value" id="rotationValue">0&deg;</span>
+          </div>
+          <div class="preset-buttons">
+            <button class="btn btn-small" data-rotation="0">0&deg;</button>
+            <button class="btn btn-small" data-rotation="45">45&deg;</button>
+            <button class="btn btn-small" data-rotation="90">90&deg;</button>
+            <button class="btn btn-small" data-rotation="-45">&minus;45&deg;</button>
+          </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- Appearance Section -->
+        <section class="panel-section">
+          <h3>Appearance</h3>
+          <div class="row">
+            <label for="lineColor">Color</label>
+            <input type="color" id="lineColor" value="#00ff00">
+          </div>
+          <div class="row">
+            <label for="lineWidth">Width</label>
+            <input type="range" id="lineWidth" min="0.5" max="5" step="0.5" value="1.5">
+            <span class="value" id="lineWidthValue">1.5</span>
+          </div>
+          <div class="row">
+            <label for="lineOpacity">Opacity</label>
+            <input type="range" id="lineOpacity" min="0.1" max="1" step="0.05" value="0.8">
+            <span class="value" id="lineOpacityValue">80%</span>
+          </div>
+        </section>
+
+        <hr class="divider">
+
+        <!-- Position Section -->
+        <section class="panel-section">
+          <h3>Position</h3>
+          <button class="btn" id="btnCenter">Center Grid</button>
+          <p class="hint" id="positionHint">x: 0, y: 0</p>
+        </section>
+
+        <hr class="divider">
+
+        <!-- Snapshot Section -->
+        <section class="panel-section">
+          <h3>Snapshot</h3>
+          <button class="btn btn-primary" id="btnSnapshot" disabled>Capture Snapshot</button>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
