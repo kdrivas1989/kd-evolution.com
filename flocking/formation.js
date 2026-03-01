@@ -108,32 +108,44 @@ export function renderFormation(rows) {
   ctx.textAlign = 'center';
   ctx.fillText('Formation', canvasW / 2, padding + 20);
 
-  // Draw rows — each person sits inside a diamond that fits within the cell
-  const startY = padding + titleH + vSpacing / 2;
-  const diamondR = Math.min(hSpacing, vSpacing) / 2 - 4; // inset so diamond doesn't touch grid lines
+  // Draw grid + people — uniform grid based on the widest row
+  const cellSize = Math.min(hSpacing, vSpacing);
+  const gridCols = maxInRow;
+  const gridRows = rows.length;
+  const gridW = gridCols * cellSize;
+  const gridH = gridRows * cellSize;
+  const gridLeft = (canvasW - gridW) / 2;
+  const gridTop = padding + titleH;
+
+  // Grid lines
+  ctx.strokeStyle = '#00ff00';
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.8;
+  for (let r = 0; r <= gridRows; r++) {
+    const y = gridTop + r * cellSize;
+    ctx.beginPath();
+    ctx.moveTo(gridLeft, y);
+    ctx.lineTo(gridLeft + gridW, y);
+    ctx.stroke();
+  }
+  for (let c = 0; c <= gridCols; c++) {
+    const x = gridLeft + c * cellSize;
+    ctx.beginPath();
+    ctx.moveTo(x, gridTop);
+    ctx.lineTo(x, gridTop + gridH);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Draw people centered in their grid cells
+  const personSize = cellSize * 0.75; // fits inside cell with margin
   for (let r = 0; r < rows.length; r++) {
     const count = rows[r];
-    const rowWidth = count * hSpacing;
-    const startX = (canvasW - rowWidth) / 2 + hSpacing / 2;
-    const cy = startY + r * vSpacing;
+    const rowOffsetX = (gridCols - count) * cellSize / 2;
+    const cy = gridTop + r * cellSize + cellSize / 2;
     for (let c = 0; c < count; c++) {
-      const cx = startX + c * hSpacing;
-
-      // Diamond outline
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - diamondR);           // top
-      ctx.lineTo(cx + diamondR, cy);            // right
-      ctx.lineTo(cx, cy + diamondR);            // bottom
-      ctx.lineTo(cx - diamondR, cy);            // left
-      ctx.closePath();
-      ctx.strokeStyle = '#2563eb';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(37, 99, 235, 0.06)';
-      ctx.fill();
-
-      // Person icon scaled to fit inside diamond
-      drawParachutePerson(ctx, cx, cy, diamondR * 1.3);
+      const cx = gridLeft + rowOffsetX + c * cellSize + cellSize / 2;
+      drawParachutePerson(ctx, cx, cy, personSize);
     }
   }
 
