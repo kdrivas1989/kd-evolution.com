@@ -92,7 +92,6 @@ export function renderFormation(rows) {
   const maxInRow = Math.max(...rows);
   const spacing = 100;
   const personSize = 55;
-  const boxSize = 88; // square around each person — bigger than icon, no touching
 
   // Layout people in straight rows, centered horizontally
   const formationW = maxInRow * spacing;
@@ -129,17 +128,7 @@ export function renderFormation(rows) {
     }
   }
 
-  // Draw a square around each person
-  ctx.strokeStyle = '#00ff00';
-  ctx.lineWidth = 1.5;
-  ctx.globalAlpha = 0.8;
-  const half = boxSize / 2;
-  for (const pos of positions) {
-    ctx.strokeRect(pos.x - half, pos.y - half, boxSize, boxSize);
-  }
-  ctx.globalAlpha = 1;
-
-  // Draw people on top
+  // Draw people
   for (const pos of positions) {
     drawParachutePerson(ctx, pos.x, pos.y, personSize);
   }
