@@ -267,6 +267,46 @@ input[type="range"]::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Formation Planner ── */
+.formation-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formation-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.formation-row span {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 44px;
+}
+
+.formation-row input[type="number"] {
+  width: 56px;
+}
+
+.formation-row .btn-remove {
+  padding: 2px 7px;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.formation-row .btn-remove:hover {
+  background: #4a2020;
+  border-color: #a33;
+  color: #f88;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .app {

@@ -8,6 +8,7 @@ import { GridRenderer } from './grid-renderer.js';
 import { MediaLoader } from './media-loader.js';
 import { Gestures } from './gestures.js';
 import { captureSnapshot } from './snapshot.js';
+import { renderFormation } from './formation.js';
 
 /* ── DOM refs ── */
 const $ = (sel) => document.querySelector(sel);
@@ -142,3 +143,54 @@ document.addEventListener('keydown', (e) => {
     mediaLoader.togglePlayPause();
   }
 });
+
+/* ── Flocking ── */
+
+const formationRowsEl = $('#formationRows');
+const btnAddRow = $('#btnAddRow');
+const btnDownloadFormation = $('#btnDownloadFormation');
+
+let formationRows = [1];
+
+function buildFormationUI() {
+  formationRowsEl.innerHTML = '';
+  formationRows.forEach((count, i) => {
+    const row = document.createElement('div');
+    row.className = 'formation-row';
+
+    const label = document.createElement('span');
+    label.textContent = `Row ${i + 1}:`;
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = 1;
+    input.max = 20;
+    input.value = count;
+    input.addEventListener('input', () => {
+      formationRows[i] = Math.max(1, Math.min(20, parseInt(input.value, 10) || 1));
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn-remove';
+    removeBtn.textContent = '\u00d7';
+    removeBtn.addEventListener('click', () => {
+      formationRows.splice(i, 1);
+      if (formationRows.length === 0) formationRows.push(1);
+      buildFormationUI();
+    });
+
+    row.append(label, input, removeBtn);
+    formationRowsEl.appendChild(row);
+  });
+}
+
+btnAddRow.addEventListener('click', () => {
+  formationRows.push(1);
+  buildFormationUI();
+});
+
+btnDownloadFormation.addEventListener('click', () => {
+  renderFormation(formationRows);
+});
+
+buildFormationUI();
