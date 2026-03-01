@@ -91,13 +91,14 @@ export function renderFormation(rows) {
 
   const maxInRow = Math.max(...rows);
   const spacing = 100;
-  const personSize = 50;
+  const personSize = 55;
+  const boxSize = 88; // square around each person — bigger than icon, no touching
 
   // Layout people in straight rows, centered horizontally
   const formationW = maxInRow * spacing;
   const formationH = rows.length * spacing;
-  const canvasW = Math.max(formationW + padding * 2 + spacing, 200);
-  const canvasH = formationH + padding * 2 + titleH + spacing;
+  const canvasW = Math.max(formationW + padding * 2, 200);
+  const canvasH = formationH + padding * 2 + titleH;
 
   const canvas = document.createElement('canvas');
   canvas.width = canvasW;
@@ -115,7 +116,7 @@ export function renderFormation(rows) {
   ctx.fillText('Formation', canvasW / 2, padding + 20);
 
   // Compute person positions (straight rows, centered)
-  const startY = padding + titleH + spacing;
+  const startY = padding + titleH + spacing / 2;
   const centerX = canvasW / 2;
   const positions = [];
   for (let r = 0; r < rows.length; r++) {
@@ -128,77 +129,17 @@ export function renderFormation(rows) {
     }
   }
 
-  // Draw rotated 45-degree grid using explicit diagonal lines.
-  // Two sets of lines:
-  //   Set A (slope -1): x + y = constant
-  //   Set B (slope +1): y - x = constant
-  //
-  // Center person is at (centerX, centerY). For that person:
-  //   a_center = centerX + centerY
-  //   b_center = centerY - centerX
-  //
-  // People in the widest row are spaced `spacing` apart horizontally,
-  // so their `a` values differ by `spacing`. People in adjacent rows
-  // with offset centering have `a` values at half-spacing intervals.
-  //
-  // We offset grid lines by spacing/4 so ALL people are at distance
-  // spacing/4 from the nearest grid line in both diagonal directions.
-  const centerY_form = startY + (rows.length - 1) * spacing / 2;
-  const aCenter = centerX + centerY_form;
-  const bCenter = centerY_form - centerX;
-  const halfSpacing = spacing / 2;
-  const gridOffset = halfSpacing / 2; // spacing/4 offset
-
-  // Determine range of grid lines needed
-  const margin = spacing * 1.5;
-  const minX = centerX - formationW / 2 - margin;
-  const maxX = centerX + formationW / 2 + margin;
-  const minY = startY - margin;
-  const maxY = startY + (rows.length - 1) * spacing + margin;
-
+  // Draw a square around each person
   ctx.strokeStyle = '#00ff00';
   ctx.lineWidth = 1.5;
   ctx.globalAlpha = 0.8;
-
-  // Set A lines: x + y = aCenter + n * halfSpacing + gridOffset
-  // These are lines with slope -1
-  const aMin = minX + minY;
-  const aMax = maxX + maxY;
-  for (let a = aCenter + gridOffset; a <= aMax; a += halfSpacing) {
-    ctx.beginPath();
-    ctx.moveTo(minX, a - minX);
-    ctx.lineTo(maxX, a - maxX);
-    ctx.stroke();
-  }
-  for (let a = aCenter + gridOffset - halfSpacing; a >= aMin; a -= halfSpacing) {
-    ctx.beginPath();
-    ctx.moveTo(minX, a - minX);
-    ctx.lineTo(maxX, a - maxX);
-    ctx.stroke();
-  }
-
-  // Set B lines: y - x = bCenter + n * halfSpacing + gridOffset
-  // These are lines with slope +1
-  const bMin = minY - maxX;
-  const bMax = maxY - minX;
-  for (let b = bCenter + gridOffset; b <= bMax; b += halfSpacing) {
-    ctx.beginPath();
-    ctx.moveTo(minX, b + minX);
-    ctx.lineTo(maxX, b + maxX);
-    ctx.stroke();
-  }
-  for (let b = bCenter + gridOffset - halfSpacing; b >= bMin; b -= halfSpacing) {
-    ctx.beginPath();
-    ctx.moveTo(minX, b + minX);
-    ctx.lineTo(maxX, b + maxX);
-    ctx.stroke();
+  const half = boxSize / 2;
+  for (const pos of positions) {
+    ctx.strokeRect(pos.x - half, pos.y - half, boxSize, boxSize);
   }
   ctx.globalAlpha = 1;
 
-  // Clip the grid to a clean rectangle around the formation
-  // (already bounded by the line endpoints via minX/maxX/minY/maxY)
-
-  // Draw people at their straight-row positions (on top of grid)
+  // Draw people on top
   for (const pos of positions) {
     drawParachutePerson(ctx, pos.x, pos.y, personSize);
   }
