@@ -90,8 +90,16 @@ export function renderFormation(rows) {
   const titleH = 40;
 
   const maxInRow = Math.max(...rows);
-  const canvasW = Math.max(maxInRow * hSpacing, 200) + padding * 2;
-  const canvasH = rows.length * vSpacing + padding * 2 + titleH;
+  const cellSize = 80;
+  const gridCols = maxInRow;
+  const gridRows = rows.length;
+
+  // Rotated 45deg: the grid's bounding box is sqrt(2) times larger
+  const diag = cellSize * Math.SQRT2;
+  const rotatedW = (gridCols + gridRows) * diag / 2;
+  const rotatedH = (gridCols + gridRows) * diag / 2;
+  const canvasW = Math.max(rotatedW + padding * 2, 200);
+  const canvasH = rotatedH + padding * 2 + titleH;
 
   const canvas = document.createElement('canvas');
   canvas.width = canvasW;
@@ -108,14 +116,20 @@ export function renderFormation(rows) {
   ctx.textAlign = 'center';
   ctx.fillText('Formation', canvasW / 2, padding + 20);
 
-  // Draw grid + people — uniform grid based on the widest row
-  const cellSize = Math.min(hSpacing, vSpacing);
-  const gridCols = maxInRow;
-  const gridRows = rows.length;
+  // Center of the rotated grid
+  const centerX = canvasW / 2;
+  const centerY = padding + titleH + rotatedH / 2;
+
+  // Draw rotated grid and people
+  ctx.save();
+  ctx.translate(centerX, centerY);
+  ctx.rotate(Math.PI / 4); // 45 degrees
+
+  // Grid origin (top-left of unrotated grid, centered)
   const gridW = gridCols * cellSize;
   const gridH = gridRows * cellSize;
-  const gridLeft = (canvasW - gridW) / 2;
-  const gridTop = padding + titleH;
+  const gridLeft = -gridW / 2;
+  const gridTop = -gridH / 2;
 
   // Grid lines
   ctx.strokeStyle = '#00ff00';
@@ -136,15 +150,22 @@ export function renderFormation(rows) {
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
+  ctx.restore();
 
-  // Draw people centered in their grid cells
-  const personSize = cellSize * 0.75; // fits inside cell with margin
+  // Draw people upright at the rotated cell centers
+  // Map grid cell (col, row) to rotated canvas position
+  const personSize = cellSize * 0.5; // fits inside rotated cell without touching lines
   for (let r = 0; r < rows.length; r++) {
     const count = rows[r];
-    const rowOffsetX = (gridCols - count) * cellSize / 2;
-    const cy = gridTop + r * cellSize + cellSize / 2;
+    const rowOffsetCol = (gridCols - count) / 2;
     for (let c = 0; c < count; c++) {
-      const cx = gridLeft + rowOffsetX + c * cellSize + cellSize / 2;
+      // Cell center in grid space (before rotation)
+      const gx = (rowOffsetCol + c + 0.5) * cellSize - gridW / 2;
+      const gy = (r + 0.5) * cellSize - gridH / 2;
+      // Rotate 45deg to get canvas position
+      const angle = Math.PI / 4;
+      const cx = centerX + gx * Math.cos(angle) - gy * Math.sin(angle);
+      const cy = centerY + gx * Math.sin(angle) + gy * Math.cos(angle);
       drawParachutePerson(ctx, cx, cy, personSize);
     }
   }
