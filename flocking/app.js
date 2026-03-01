@@ -150,7 +150,7 @@ const formationRowsEl = $('#formationRows');
 const btnAddRow = $('#btnAddRow');
 const btnDownloadFormation = $('#btnDownloadFormation');
 
-let formationRows = [1];
+let formationRows = [1, 2, 3, 2, 1];
 
 function buildFormationUI() {
   formationRowsEl.innerHTML = '';

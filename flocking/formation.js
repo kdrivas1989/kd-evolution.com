@@ -108,8 +108,9 @@ export function renderFormation(rows) {
   ctx.textAlign = 'center';
   ctx.fillText('Formation', canvasW / 2, padding + 20);
 
-  // Draw rows
+  // Draw rows — each person sits inside a diamond that fits within the cell
   const startY = padding + titleH + vSpacing / 2;
+  const diamondR = Math.min(hSpacing, vSpacing) / 2 - 4; // inset so diamond doesn't touch grid lines
   for (let r = 0; r < rows.length; r++) {
     const count = rows[r];
     const rowWidth = count * hSpacing;
@@ -117,7 +118,22 @@ export function renderFormation(rows) {
     const cy = startY + r * vSpacing;
     for (let c = 0; c < count; c++) {
       const cx = startX + c * hSpacing;
-      drawParachutePerson(ctx, cx, cy, iconSize);
+
+      // Diamond outline
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - diamondR);           // top
+      ctx.lineTo(cx + diamondR, cy);            // right
+      ctx.lineTo(cx, cy + diamondR);            // bottom
+      ctx.lineTo(cx - diamondR, cy);            // left
+      ctx.closePath();
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(37, 99, 235, 0.06)';
+      ctx.fill();
+
+      // Person icon scaled to fit inside diamond
+      drawParachutePerson(ctx, cx, cy, diamondR * 1.3);
     }
   }
 
